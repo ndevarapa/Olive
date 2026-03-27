@@ -384,9 +384,7 @@ class OliveCache:
     ):
         """Save a model from the cache to a given path."""
         output_dir = Path(output_dir) if output_dir else Path.cwd()
-
-        # Check if output_dir is an existing file; otherwise treat as directory
-        if output_dir.is_file():
+        if output_dir.suffix and not output_dir.is_dir():
             actual_output_dir = output_dir.parent
         else:
             actual_output_dir = output_dir

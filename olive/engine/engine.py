@@ -195,8 +195,9 @@ class Engine:
             self.initialize(log_to_file, log_severity_level)
 
         output_dir: Path = (Path(output_dir) if output_dir else Path.cwd()).resolve()
-        # Check if output_dir is an existing file; otherwise treat as directory
-        if output_dir.is_file():
+        # Treat as file path only if it has a suffix and is not an existing directory
+        is_file_path = output_dir.suffix and not output_dir.is_dir()
+        if is_file_path:
             output_dir.parent.mkdir(parents=True, exist_ok=True)
             artifacts_dir = output_dir.parent
         else:
@@ -252,9 +253,8 @@ class Engine:
 
         self.footprint.record(is_input_model=True, model_id=input_model_id)
 
-        # Determine the directory for artifacts
-        # If output_dir is an existing file, use its parent; otherwise use output_dir itself
-        artifacts_dir = output_dir.parent if output_dir.is_file() else output_dir
+        # Artifacts directory: file path (has suffix, not existing dir) uses parent
+        artifacts_dir = output_dir.parent if (output_dir.suffix and not output_dir.is_dir()) else output_dir
 
         try:
             if evaluate_input_model and not self.evaluator_config:

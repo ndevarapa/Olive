@@ -199,7 +199,7 @@ class TestModelPackager:
     def test_packager_device_from_target_device_attr(self, tmp_path):
         mt = _make_multi_target(
             tmp_path,
-            [("t1", {"architecture": "a", "target_device": "GPU"}), ("t2", {"architecture": "b"})],
+            [("t1", {"architecture": "a", "device": "GPU"}), ("t2", {"architecture": "b"})],
         )
 
         p = self._create_packager(device="NPU")

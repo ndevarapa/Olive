@@ -150,7 +150,7 @@ class OpenVINOEncapsulation(Pass):
         targets = []
         target_names = []
         for ov_ver in ov_version_list:
-            target_name = f"ov_{ov_ver}"
+            target_name = f"ov_{ov_ver.replace('.', '_')}"
             target_output_path = str(output_dir / target_name)
 
             single_config = deepcopy(config)

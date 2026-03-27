@@ -147,7 +147,7 @@ def test_multi_target_returns_multi_target_handler(tmp_path):
         result = p.run(input_model, output_path)
 
     assert isinstance(result, MultiTargetModelHandler)
-    assert result.target_names == ["ov_2025.1", "ov_2025.2"]
+    assert result.target_names == ["ov_2025_1", "ov_2025_2"]
     assert mock_single.call_count == 2
 
 

@@ -69,9 +69,9 @@ class TestModelPackageCommand:
             [
                 "model-package",
                 "--source",
-                f"soc_60={soc_60}",
+                str(soc_60),
                 "--source",
-                f"soc_73={soc_73}",
+                str(soc_73),
                 "-o",
                 str(output_dir),
             ]
@@ -87,13 +87,13 @@ class TestModelPackageCommand:
         assert len(manifest["components"]) == 2
         assert manifest["name"] == "output"
         assert manifest["components"][0]["variant_name"] == "soc_60"
-        assert manifest["components"][0]["file"] == "soc_60/"
+        assert manifest["components"][0]["file"] == str(soc_60)
         assert manifest["components"][0]["constraints"]["ep"] == "QNNExecutionProvider"
         assert manifest["components"][0]["constraints"]["device"] == "NPU"
         assert manifest["components"][0]["constraints"]["architecture"] == "60"
         assert manifest["components"][0]["constraints"]["precision"] == "int4"
         assert manifest["components"][1]["variant_name"] == "soc_73"
-        assert manifest["components"][1]["file"] == "soc_73/"
+        assert manifest["components"][1]["file"] == str(soc_73)
         assert manifest["components"][1]["constraints"]["architecture"] == "73"
 
         # Check files were copied
@@ -129,8 +129,8 @@ class TestModelPackageCommand:
         with open(output_dir / "manifest.json") as f:
             manifest = json.load(f)
 
-        assert manifest["components"][0]["file"] == "soc_60/"
-        assert manifest["components"][1]["file"] == "soc_73/"
+        assert manifest["components"][0]["file"] == str(soc_60)
+        assert manifest["components"][1]["file"] == str(soc_73)
 
     def test_merge_openvino_targets(self, tmp_path):
         """Test merging OpenVINO context binary outputs."""
@@ -160,9 +160,9 @@ class TestModelPackageCommand:
             [
                 "model-package",
                 "--source",
-                f"ov_2025.1={ov_2025_1}",
+                str(ov_2025_1),
                 "--source",
-                f"ov_2025.2={ov_2025_2}",
+                str(ov_2025_2),
                 "-o",
                 str(output_dir),
             ]

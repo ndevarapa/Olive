@@ -503,6 +503,7 @@ class OpenVINOOptimumConversion(Pass):
             # Set tempdir to output path so temp files are on the same filesystem as the cache.
             import tempfile
 
+            Path(output_model_path).mkdir(parents=True, exist_ok=True)
             original_tmpdir = os.environ.get("TMPDIR")
             original_tempdir = tempfile.tempdir
             os.environ["TMPDIR"] = output_model_path

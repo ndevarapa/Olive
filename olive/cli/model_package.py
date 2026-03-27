@@ -77,7 +77,7 @@ class ModelPackageCommand(BaseOliveCLICommand):
 
             entry = {
                 "variant_name": target_name,
-                "file": {model_config["model_path"]},
+                "file": model_config.get("config", {}).get("model_path", f"{target_name}/"),
                 "constraints": constraints,
             }
 
@@ -97,7 +97,6 @@ class ModelPackageCommand(BaseOliveCLICommand):
             if not path.is_dir():
                 raise ValueError(f"Source path does not exist or is not a directory: {path}")
 
-            # Validate model_config.json exists
             if not (path / "model_config.json").exists():
                 raise ValueError(
                     f"No model_config.json found in {path}. "

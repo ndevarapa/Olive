@@ -3,6 +3,7 @@
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
 import logging
+from collections.abc import Iterator
 from typing import Any, Optional, Union
 
 from olive.common.config_utils import serialize_to_json, validate_config
@@ -71,7 +72,7 @@ class MultiTargetModelHandler(OliveModelHandler):
             json_dict["config"]["target_models"].append(target_json)
         return serialize_to_json(json_dict, check_object)
 
-    def get_target_models(self) -> list[tuple[str, OliveModelHandler]]:
+    def get_target_models(self) -> Iterator[tuple[str, OliveModelHandler]]:
         """Iterate over (target_name, target_model) pairs."""
         return zip(self.target_names, self.target_models)
 
