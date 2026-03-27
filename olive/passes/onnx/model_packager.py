@@ -17,7 +17,7 @@ from olive.passes.pass_config import BasePassConfig, PassConfigParam
 logger = logging.getLogger(__name__)
 
 
-class EPContextBinaryPackager(Pass):
+class ModelPackager(Pass):
     """Generate a manifest.json metadata file for multi-target EP context binaries.
 
     This pass takes a MultiTargetModelHandler (produced by EPContextBinaryGenerator with
@@ -66,10 +66,7 @@ class EPContextBinaryPackager(Pass):
         config: type[BasePassConfig],
         output_model_path: str,
     ) -> MultiTargetModelHandler:
-        assert isinstance(model, MultiTargetModelHandler), (
-            "EPContextBinaryPackager requires a MultiTargetModelHandler as input. "
-            "Use EPContextBinaryGenerator with a list of provider_options to produce one."
-        )
+        assert isinstance(model, MultiTargetModelHandler), "ModelPackager requires a MultiTargetModelHandler as input."
 
         output_dir = Path(output_model_path).with_suffix("")
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -138,7 +135,6 @@ class EPContextBinaryPackager(Pass):
         target_model: Union[ONNXModelHandler, CompositeModelHandler],
         output_dir: Path,
     ) -> None:
-        """Copy target model files to the output directory under target_name/."""
         dest_dir = output_dir / target_name
         if dest_dir.exists():
             return
@@ -159,7 +155,6 @@ class EPContextBinaryPackager(Pass):
         target_name: str,
         target_model: Union[ONNXModelHandler, CompositeModelHandler],
     ) -> str:
-        """Get the model path relative to the target name for the manifest."""
         if isinstance(target_model, ONNXModelHandler):
             return f"{target_name}/{Path(target_model.model_path).name}"
         # For CompositeModelHandler or other types, use the directory

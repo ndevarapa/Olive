@@ -12,7 +12,7 @@ from olive.hardware.accelerator import AcceleratorSpec
 from olive.model import ONNXModelHandler
 from olive.model.handler.multi_target import MultiTargetModelHandler
 from olive.passes.olive_pass import create_pass_from_dict
-from olive.passes.onnx.ep_context_packager import EPContextBinaryPackager
+from olive.passes.onnx.model_packager import ModelPackager
 
 
 def _make_onnx_handler(tmp_path, name="model", model_attributes=None):
@@ -32,16 +32,17 @@ def _make_multi_target(tmp_path, target_configs):
         names.append(name)
     return MultiTargetModelHandler(targets, names, model_path=tmp_path, model_attributes={})
 
+
 # ===========================================================================
-# EPContextBinaryPackager tests
+# ModelPackager tests
 # ===========================================================================
 
 
-class TestEPContextBinaryPackager:
+class TestModelPackager:
     def _create_packager(self, ep="QNNExecutionProvider", device="NPU", config=None):
         accelerator_spec = AcceleratorSpec(accelerator_type=device, execution_provider=ep)
         return create_pass_from_dict(
-            EPContextBinaryPackager,
+            ModelPackager,
             config or {},
             disable_search=True,
             accelerator_spec=accelerator_spec,
