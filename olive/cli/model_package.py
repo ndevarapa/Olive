@@ -59,36 +59,48 @@ class ModelPackageCommand(BaseOliveCLICommand):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         model_name = self.args.model_name or output_dir.name
-        manifest = {"name": model_name, "components": []}
 
+        # Create component model directory
+        component_dir = output_dir / model_name
+        component_dir.mkdir(parents=True, exist_ok=True)
+
+        model_variants = {}
         for target_name, source_path in sources:
-            # Read model_config.json from source
             model_config = self._read_model_config(source_path)
             model_attrs = model_config.get("config", {}).get("model_attributes") or {}
 
-            # Copy source directory to output/{target_name}/
-            target_dir = output_dir / target_name
+            # Copy source directory into component_dir/{target_name}/
+            target_dir = component_dir / target_name
             hardlink_copy_dir(source_path, target_dir)
 
             constraints = {}
-            for key in ("ep", "device", "architecture", "precision", "sdk_version"):
+            for key in ("ep", "device", "architecture", "ep_compatibility_info"):
                 if model_attrs.get(key) is not None:
                     constraints[key] = model_attrs[key]
 
-            entry = {
-                "variant_name": target_name,
+            model_variants[target_name] = {
                 "file": model_config.get("config", {}).get("model_path", f"{target_name}/"),
                 "constraints": constraints,
             }
 
-            manifest["components"].append(entry)
+        # Write metadata.json in component directory
+        metadata = {"name": model_name, "model_variants": model_variants}
+        with open(component_dir / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
 
-        # Write manifest.json
+        # Write manifest.json at package root
+        manifest = {
+            "name": model_name,
+            "component_models": {
+                model_name: {"model_variants": model_variants},
+            },
+        }
         manifest_path = output_dir / "manifest.json"
         with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=2)
 
         print(f"Merged {len(sources)} targets into {output_dir}")
+        print(f"Manifest written to {manifest_path}")
 
     def _parse_sources(self) -> list[tuple[str, Path]]:
         sources = []

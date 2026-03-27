@@ -18,19 +18,19 @@ logger = logging.getLogger(__name__)
 
 
 class ModelPackager(Pass):
-    """Generate a manifest.json metadata file for multi-target EP context binaries.
+    """Generate an ORT model package with manifest.json and per-component metadata.json.
 
     This pass takes a MultiTargetModelHandler (produced by EPContextBinaryGenerator with
-    a list of provider_options) and generates a manifest.json file describing each target's
-    context binary with metadata required by ONNX Runtime.
+    a list of provider_options) and generates a model package following the ORT spec:
 
-    The manifest includes:
-    - ep: execution provider name
-    - device_type: CPU, NPU, or GPU
-    - architecture: hardware architecture (e.g., SoC model)
-    - precision: model precision (from model_attributes)
-    - sdk_version: optional SDK version
-    - compile_options: optional compilation options
+    - manifest.json at package root with component_models and model_variants
+    - metadata.json per component model directory with variant descriptors
+
+    Variant constraints include:
+    - ep (required): execution provider name
+    - device (optional): target device type (cpu, gpu, npu)
+    - architecture (optional): hardware architecture hint
+    - ep_compatibility_info (optional): EP-specific compatibility string
     """
 
     _accepts_composite_model = True
@@ -43,16 +43,6 @@ class ModelPackager(Pass):
                 type_=str,
                 default_value=None,
                 description="Model name for the manifest. If not set, derived from the output directory name.",
-            ),
-            "sdk_version": PassConfigParam(
-                type_=str,
-                default_value=None,
-                description="SDK version string (e.g., 'qnn_sdk_2.28').",
-            ),
-            "compile_options": PassConfigParam(
-                type_=dict,
-                default_value=None,
-                description="Additional compile options to include in the manifest (e.g., dynamic shape, batch size).",
             ),
         }
 
@@ -71,57 +61,57 @@ class ModelPackager(Pass):
         output_dir = Path(output_model_path).with_suffix("")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Derive model name from config or output directory
         model_name = config.model_name or output_dir.name
 
-        manifest = {"name": model_name, "components": []}
+        # Build model_variants dict and copy files into component directory
+        component_dir = output_dir / model_name
+        component_dir.mkdir(parents=True, exist_ok=True)
 
+        model_variants = {}
         for target_name, target_model in model.get_target_models():
             target_attrs = target_model.model_attributes or {}
 
-            # Copy target model files to output directory
-            self._copy_target_model(target_name, target_model, output_dir)
+            self._copy_target_model(target_name, target_model, component_dir)
 
-            # Determine the model path relative to output directory
-            model_path = self._get_relative_model_path(target_name, target_model)
+            file_path = self._get_relative_model_path(target_name, target_model)
 
-            entry = {
-                "variant_name": target_name,
-                "file": model_path,
-                "constraints": {
-                    "ep": self.accelerator_spec.execution_provider,
-                    "device": target_attrs.get("device", str(self.accelerator_spec.accelerator_type).upper()),
-                    "architecture": target_attrs.get("architecture", target_name),
-                },
-            }
+            constraints = {"ep": self.accelerator_spec.execution_provider}
+            device = target_attrs.get("device")
+            if device:
+                constraints["device"] = device
+            architecture = target_attrs.get("architecture")
+            if architecture:
+                constraints["architecture"] = architecture
+            ep_compat = target_attrs.get("ep_compatibility_info")
+            if ep_compat:
+                constraints["ep_compatibility_info"] = ep_compat
 
-            # Add precision from model_attributes if available
-            precision = target_attrs.get("precision")
-            if precision:
-                entry["constraints"]["precision"] = precision
+            model_variants[target_name] = {"file": file_path, "constraints": constraints}
 
-            # Add sdk_version from model_attributes or config
-            sdk_version = target_attrs.get("sdk_version") or config.sdk_version
-            if sdk_version:
-                entry["constraints"]["sdk_version"] = sdk_version
-            if config.compile_options:
-                entry["constraints"]["compile_options"] = config.compile_options
+        # Write metadata.json in the component directory
+        metadata = {"name": model_name, "model_variants": model_variants}
+        metadata_path = component_dir / "metadata.json"
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, indent=2)
+        logger.info("Generated metadata at %s", metadata_path)
 
-            manifest["components"].append(entry)
-
-        # Write manifest.json
+        # Write manifest.json at package root
+        manifest = {
+            "name": model_name,
+            "component_models": {
+                model_name: {"model_variants": model_variants},
+            },
+        }
         manifest_path = output_dir / "manifest.json"
         with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=2)
         logger.info("Generated manifest at %s", manifest_path)
 
-        # Update model_attributes to include manifest path
-        # Remove additional_files since each target subfolder already contains its own tokenizer/config files
+        # Update model_attributes
         new_model_attributes = model.model_attributes or {}
         new_model_attributes = {**new_model_attributes, "manifest_path": str(manifest_path)}
         new_model_attributes.pop("additional_files", None)
 
-        # Return the same MultiTargetModelHandler with updated attributes and path
         return MultiTargetModelHandler(
             [target_model for _, target_model in model.get_target_models()],
             [target_name for target_name, _ in model.get_target_models()],

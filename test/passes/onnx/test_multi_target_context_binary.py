@@ -52,8 +52,8 @@ class TestModelPackager:
         mt = _make_multi_target(
             tmp_path,
             [
-                ("soc_60", {"architecture": "60", "precision": "int4"}),
-                ("soc_73", {"architecture": "73", "precision": "int4"}),
+                ("soc_60", {"architecture": "60", "device": "NPU"}),
+                ("soc_73", {"architecture": "73", "device": "NPU"}),
             ],
         )
 
@@ -61,28 +61,40 @@ class TestModelPackager:
         output_path = str(tmp_path / "output.onnx")
         result = p.run(mt, output_path)
 
-        # Result is still a MultiTargetModelHandler
         assert isinstance(result, MultiTargetModelHandler)
 
-        # manifest.json exists
+        # manifest.json at package root
         manifest_path = tmp_path / "output" / "manifest.json"
         assert manifest_path.exists()
 
         with open(manifest_path) as f:
             manifest = json.load(f)
 
-        assert len(manifest["components"]) == 2
-        assert manifest["components"][0]["variant_name"] == "soc_60"
-        assert manifest["components"][0]["constraints"]["architecture"] == "60"
-        assert manifest["components"][0]["constraints"]["precision"] == "int4"
-        assert manifest["components"][1]["variant_name"] == "soc_73"
+        assert manifest["name"] == "output"
+        assert "output" in manifest["component_models"]
+        variants = manifest["component_models"]["output"]["model_variants"]
+        assert "soc_60" in variants
+        assert "soc_73" in variants
+        assert variants["soc_60"]["constraints"]["architecture"] == "60"
+        assert variants["soc_73"]["constraints"]["architecture"] == "73"
+        assert variants["soc_60"]["constraints"]["ep"] == "QNNExecutionProvider"
 
-    def test_packager_with_sdk_version(self, tmp_path):
+        # metadata.json in component directory
+        metadata_path = tmp_path / "output" / "output" / "metadata.json"
+        assert metadata_path.exists()
+
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+
+        assert metadata["name"] == "output"
+        assert metadata["model_variants"] == variants
+
+    def test_packager_ep_compatibility_info(self, tmp_path):
         mt = _make_multi_target(
             tmp_path,
             [
-                ("soc_60", {"architecture": "60", "sdk_version": "qnn_2.28"}),
-                ("soc_73", {"architecture": "73", "sdk_version": "qnn_2.28"}),
+                ("soc_60", {"architecture": "60", "ep_compatibility_info": "device=npu;soc=60"}),
+                ("soc_73", {"architecture": "73", "ep_compatibility_info": "device=npu;soc=73"}),
             ],
         )
 
@@ -90,44 +102,12 @@ class TestModelPackager:
         output_path = str(tmp_path / "output.onnx")
         p.run(mt, output_path)
 
-        manifest_path = tmp_path / "output" / "manifest.json"
-        with open(manifest_path) as f:
+        with open(tmp_path / "output" / "manifest.json") as f:
             manifest = json.load(f)
 
-        assert manifest["components"][0]["constraints"]["sdk_version"] == "qnn_2.28"
-
-    def test_packager_sdk_version_from_config(self, tmp_path):
-        """sdk_version from pass config is used when model_attributes doesn't have it."""
-        mt = _make_multi_target(
-            tmp_path,
-            [("soc_60", {"architecture": "60"}), ("soc_73", {"architecture": "73"})],
-        )
-
-        p = self._create_packager(config={"sdk_version": "qnn_2.30"})
-        output_path = str(tmp_path / "output.onnx")
-        p.run(mt, output_path)
-
-        manifest_path = tmp_path / "output" / "manifest.json"
-        with open(manifest_path) as f:
-            manifest = json.load(f)
-
-        assert manifest["components"][0]["constraints"]["sdk_version"] == "qnn_2.30"
-
-    def test_packager_compile_options(self, tmp_path):
-        mt = _make_multi_target(
-            tmp_path,
-            [("soc_60", {"architecture": "60"}), ("soc_73", {"architecture": "73"})],
-        )
-
-        p = self._create_packager(config={"compile_options": {"dynamic_shape": True}})
-        output_path = str(tmp_path / "output.onnx")
-        p.run(mt, output_path)
-
-        manifest_path = tmp_path / "output" / "manifest.json"
-        with open(manifest_path) as f:
-            manifest = json.load(f)
-
-        assert manifest["components"][0]["constraints"]["compile_options"] == {"dynamic_shape": True}
+        variants = manifest["component_models"]["output"]["model_variants"]
+        assert variants["soc_60"]["constraints"]["ep_compatibility_info"] == "device=npu;soc=60"
+        assert variants["soc_73"]["constraints"]["ep_compatibility_info"] == "device=npu;soc=73"
 
     def test_packager_custom_model_name(self, tmp_path):
         mt = _make_multi_target(
@@ -139,11 +119,16 @@ class TestModelPackager:
         output_path = str(tmp_path / "output.onnx")
         p.run(mt, output_path)
 
-        manifest_path = tmp_path / "output" / "manifest.json"
-        with open(manifest_path) as f:
+        with open(tmp_path / "output" / "manifest.json") as f:
             manifest = json.load(f)
 
         assert manifest["name"] == "my_model"
+        assert "my_model" in manifest["component_models"]
+
+        # metadata.json under my_model/
+        with open(tmp_path / "output" / "my_model" / "metadata.json") as f:
+            metadata = json.load(f)
+        assert metadata["name"] == "my_model"
 
     def test_packager_rejects_non_multi_target(self, tmp_path):
         handler = _make_onnx_handler(tmp_path, "single")
@@ -162,9 +147,9 @@ class TestModelPackager:
         output_path = str(tmp_path / "output.onnx")
         p.run(mt, output_path)
 
-        # Check files were copied
-        assert (tmp_path / "output" / "soc_60").is_dir()
-        assert (tmp_path / "output" / "soc_73").is_dir()
+        # Files are under output/<model_name>/<variant>/
+        assert (tmp_path / "output" / "output" / "soc_60").is_dir()
+        assert (tmp_path / "output" / "output" / "soc_73").is_dir()
 
     def test_packager_default_model_name_from_dir(self, tmp_path):
         mt = _make_multi_target(
@@ -181,22 +166,7 @@ class TestModelPackager:
 
         assert manifest["name"] == "my_package"
 
-    def test_packager_device_fallback_from_accelerator(self, tmp_path):
-        mt = _make_multi_target(
-            tmp_path,
-            [("t1", {"architecture": "a"}), ("t2", {"architecture": "b"})],
-        )
-
-        p = self._create_packager(device="NPU")
-        output_path = str(tmp_path / "output.onnx")
-        p.run(mt, output_path)
-
-        with open(tmp_path / "output" / "manifest.json") as f:
-            manifest = json.load(f)
-
-        assert manifest["components"][0]["constraints"]["device"] == "NPU"
-
-    def test_packager_device_from_target_device_attr(self, tmp_path):
+    def test_packager_device_only_when_present(self, tmp_path):
         mt = _make_multi_target(
             tmp_path,
             [("t1", {"architecture": "a", "device": "GPU"}), ("t2", {"architecture": "b"})],
@@ -209,13 +179,14 @@ class TestModelPackager:
         with open(tmp_path / "output" / "manifest.json") as f:
             manifest = json.load(f)
 
-        assert manifest["components"][0]["constraints"]["device"] == "GPU"
-        assert manifest["components"][1]["constraints"]["device"] == "NPU"
+        variants = manifest["component_models"]["output"]["model_variants"]
+        assert variants["t1"]["constraints"]["device"] == "GPU"
+        assert "device" not in variants["t2"]["constraints"]
 
-    def test_packager_architecture_fallback_to_target_name(self, tmp_path):
+    def test_packager_optional_fields_omitted_when_absent(self, tmp_path):
         mt = _make_multi_target(
             tmp_path,
-            [("soc_60", {}), ("soc_73", {})],
+            [("t1", {}), ("t2", {})],
         )
 
         p = self._create_packager()
@@ -225,24 +196,11 @@ class TestModelPackager:
         with open(tmp_path / "output" / "manifest.json") as f:
             manifest = json.load(f)
 
-        assert manifest["components"][0]["constraints"]["architecture"] == "soc_60"
-        assert manifest["components"][1]["constraints"]["architecture"] == "soc_73"
-
-    def test_packager_precision_omitted_when_absent(self, tmp_path):
-        mt = _make_multi_target(
-            tmp_path,
-            [("t1", {"architecture": "a"}), ("t2", {"architecture": "b"})],
-        )
-
-        p = self._create_packager()
-        output_path = str(tmp_path / "output.onnx")
-        p.run(mt, output_path)
-
-        with open(tmp_path / "output" / "manifest.json") as f:
-            manifest = json.load(f)
-
-        assert "precision" not in manifest["components"][0]["constraints"]
-        assert "precision" not in manifest["components"][1]["constraints"]
+        variants = manifest["component_models"]["output"]["model_variants"]
+        for v in variants.values():
+            assert "device" not in v["constraints"]
+            assert "architecture" not in v["constraints"]
+            assert "ep_compatibility_info" not in v["constraints"]
 
     def test_packager_manifest_path_in_result_attributes(self, tmp_path):
         mt = _make_multi_target(
@@ -263,24 +221,23 @@ class TestModelPackager:
             [("t1", {"architecture": "a"}), ("t2", {"architecture": "b"})],
         )
 
-        p = self._create_packager()
+        p = self._create_packager(config={"model_name": "mdl"})
         output_path = str(tmp_path / "output.onnx")
         output_dir = tmp_path / "output"
-        output_dir.mkdir(parents=True)
+        component_dir = output_dir / "mdl"
+        component_dir.mkdir(parents=True)
 
         # Pre-create dest with a marker file
-        (output_dir / "t1").mkdir()
-        (output_dir / "t1" / "marker.txt").write_text("pre-existing")
+        (component_dir / "t1").mkdir()
+        (component_dir / "t1" / "marker.txt").write_text("pre-existing")
 
         p.run(mt, output_path)
 
-        # marker.txt should still be there (not overwritten by copytree)
-        assert (output_dir / "t1" / "marker.txt").read_text() == "pre-existing"
+        assert (component_dir / "t1" / "marker.txt").read_text() == "pre-existing"
 
     def test_packager_with_composite_model_handler(self, tmp_path):
         from olive.model import CompositeModelHandler
 
-        # Create composite model targets
         comp_dir_1 = tmp_path / "comp1"
         comp_dir_1.mkdir()
         (comp_dir_1 / "model.onnx").write_text("dummy")
@@ -314,13 +271,13 @@ class TestModelPackager:
         with open(tmp_path / "output" / "manifest.json") as f:
             manifest = json.load(f)
 
-        # CompositeModelHandler should use directory path (target_name/)
-        assert manifest["components"][0]["file"] == "soc_60/"
-        assert manifest["components"][1]["file"] == "soc_73/"
+        variants = manifest["component_models"]["output"]["model_variants"]
+        assert variants["soc_60"]["file"] == "soc_60/"
+        assert variants["soc_73"]["file"] == "soc_73/"
 
-        # Files should be copied
-        assert (tmp_path / "output" / "soc_60" / "model.onnx").exists()
-        assert (tmp_path / "output" / "soc_73" / "model.onnx").exists()
+        # Files under component dir
+        assert (tmp_path / "output" / "output" / "soc_60" / "model.onnx").exists()
+        assert (tmp_path / "output" / "output" / "soc_73" / "model.onnx").exists()
 
         assert isinstance(result, MultiTargetModelHandler)
 
@@ -329,7 +286,6 @@ class TestModelPackager:
             tmp_path,
             [("soc_60", {"architecture": "60"})],
         )
-        # Add a second target to satisfy multi-target requirement
         h2 = _make_onnx_handler(tmp_path, name="soc_73", model_attributes={"architecture": "73"})
         mt = MultiTargetModelHandler(
             [next(t for _, t in mt.get_target_models()), h2],
@@ -344,30 +300,9 @@ class TestModelPackager:
         with open(tmp_path / "output" / "manifest.json") as f:
             manifest = json.load(f)
 
-        # ONNXModelHandler should include the filename
-        assert manifest["components"][0]["file"] == "soc_60/soc_60.onnx"
-        assert manifest["components"][1]["file"] == "soc_73/soc_73.onnx"
-
-    def test_packager_sdk_version_attr_takes_precedence_over_config(self, tmp_path):
-        mt = _make_multi_target(
-            tmp_path,
-            [
-                ("t1", {"architecture": "a", "sdk_version": "from_attrs"}),
-                ("t2", {"architecture": "b"}),
-            ],
-        )
-
-        p = self._create_packager(config={"sdk_version": "from_config"})
-        output_path = str(tmp_path / "output.onnx")
-        p.run(mt, output_path)
-
-        with open(tmp_path / "output" / "manifest.json") as f:
-            manifest = json.load(f)
-
-        # t1 has sdk_version in attrs → use that
-        assert manifest["components"][0]["constraints"]["sdk_version"] == "from_attrs"
-        # t2 has no sdk_version in attrs → fall back to config
-        assert manifest["components"][1]["constraints"]["sdk_version"] == "from_config"
+        variants = manifest["component_models"]["output"]["model_variants"]
+        assert variants["soc_60"]["file"] == "soc_60/soc_60.onnx"
+        assert variants["soc_73"]["file"] == "soc_73/soc_73.onnx"
 
 
 # ===========================================================================

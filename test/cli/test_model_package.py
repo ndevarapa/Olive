@@ -84,21 +84,24 @@ class TestModelPackageCommand:
         with open(manifest_path) as f:
             manifest = json.load(f)
 
-        assert len(manifest["components"]) == 2
         assert manifest["name"] == "output"
-        assert manifest["components"][0]["variant_name"] == "soc_60"
-        assert manifest["components"][0]["file"] == str(soc_60)
-        assert manifest["components"][0]["constraints"]["ep"] == "QNNExecutionProvider"
-        assert manifest["components"][0]["constraints"]["device"] == "NPU"
-        assert manifest["components"][0]["constraints"]["architecture"] == "60"
-        assert manifest["components"][0]["constraints"]["precision"] == "int4"
-        assert manifest["components"][1]["variant_name"] == "soc_73"
-        assert manifest["components"][1]["file"] == str(soc_73)
-        assert manifest["components"][1]["constraints"]["architecture"] == "73"
+        assert "output" in manifest["component_models"]
+        variants = manifest["component_models"]["output"]["model_variants"]
+        assert "soc_60" in variants
+        assert "soc_73" in variants
+        assert variants["soc_60"]["file"] == str(soc_60)
+        assert variants["soc_60"]["constraints"]["ep"] == "QNNExecutionProvider"
+        assert variants["soc_60"]["constraints"]["device"] == "NPU"
+        assert variants["soc_60"]["constraints"]["architecture"] == "60"
+        assert variants["soc_73"]["constraints"]["architecture"] == "73"
 
-        # Check files were copied
-        assert (output_dir / "soc_60" / "model_ctx.onnx").exists()
-        assert (output_dir / "soc_73" / "model_ctx.onnx").exists()
+        # Check metadata.json in component directory
+        metadata_path = output_dir / "output" / "metadata.json"
+        assert metadata_path.exists()
+
+        # Check files were copied into component dir
+        assert (output_dir / "output" / "soc_60" / "model_ctx.onnx").exists()
+        assert (output_dir / "output" / "soc_73" / "model_ctx.onnx").exists()
 
     def test_merge_infer_name_from_dir(self, tmp_path):
         """Test that target name is inferred from directory name when not specified."""
@@ -129,8 +132,9 @@ class TestModelPackageCommand:
         with open(output_dir / "manifest.json") as f:
             manifest = json.load(f)
 
-        assert manifest["components"][0]["file"] == str(soc_60)
-        assert manifest["components"][1]["file"] == str(soc_73)
+        variants = manifest["component_models"]["output"]["model_variants"]
+        assert variants["soc_60"]["file"] == str(soc_60)
+        assert variants["soc_73"]["file"] == str(soc_73)
 
     def test_merge_openvino_targets(self, tmp_path):
         """Test merging OpenVINO context binary outputs."""
@@ -171,10 +175,11 @@ class TestModelPackageCommand:
         with open(output_dir / "manifest.json") as f:
             manifest = json.load(f)
 
-        assert len(manifest["components"]) == 2
-        assert manifest["components"][0]["constraints"]["ep"] == "OpenVINOExecutionProvider"
-        assert manifest["components"][0]["constraints"]["sdk_version"] == "2025.1"
-        assert manifest["components"][1]["constraints"]["sdk_version"] == "2025.2"
+        variants = manifest["component_models"]["output"]["model_variants"]
+        assert len(variants) == 2
+        assert variants["ov_2025.1"]["constraints"]["ep"] == "OpenVINOExecutionProvider"
+        assert variants["ov_2025.1"]["constraints"]["device"] == "NPU"
+        assert variants["ov_2025.2"]["constraints"]["device"] == "NPU"
 
     def test_merge_rejects_single_source(self, tmp_path):
         """Test that merging with a single source raises an error."""
@@ -269,7 +274,8 @@ class TestModelPackageCommand:
         with open(output_dir / "manifest.json") as f:
             manifest = json.load(f)
 
-        # precision, sdk_version, architecture should not be present
-        assert "precision" not in manifest["components"][0]["constraints"]
-        assert "sdk_version" not in manifest["components"][0]["constraints"]
-        assert "architecture" not in manifest["components"][0]["constraints"]
+        variants = manifest["component_models"]["output"]["model_variants"]
+        for v in variants.values():
+            # architecture, ep_compatibility_info should not be present
+            assert "architecture" not in v["constraints"]
+            assert "ep_compatibility_info" not in v["constraints"]
